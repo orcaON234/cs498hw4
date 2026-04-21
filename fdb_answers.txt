@@ -1,0 +1,21 @@
+Q1 (3 pts) — FoundationDB separates its architecture into a Transaction Management System (TMS) and a Storage System (SS). Why does FDB decouple these two components, and what does each layer handle?
+
+Decoupling the components gives exceptional failure safety. When a transaction fails, the storage system is unaffected. It recovers the metadata in TMS swiftly, while replaying the logs async in SS in the background. This makes recovery fast and can accept writes again. 
+TMS is responsible for maintaining ACID properties and handling the write path. It maintains the transaction log as a form of metadata. The Storage System stores the actual data where it is read . 
+
+Q2 (3 pts) — During a write transaction in FDB, which component is responsible for detecting read-write conflicts between concurrent transactions, and at what point in the commit process does this check occur?
+
+Resolvers are responsible for handling read-write conflicts. It resides in the TMS. It uses optimistic concurrency by using the most recent version to verify if any keys are changed in the transaction. This happens before committing to the log server. Resolvers signal the Proxy to abort the transaction if failed and clients have to correct and restart the transaction. 
+
+Q3 (3 pts) — FDB's Sequencer assigns both a read version and a commit version to each transaction. What is the purpose of the read version, and how does it relate to the consistency guarantees FDB provides?
+
+
+The read version is a logical timestamp. It defines a snapshot of the SS, ensuring reads get the same data while write commits are running. The resolver uses read version to determine consistency when conflicts appear. By checking the read version against new commit version, it guarantees strict serializability. 
+
+Q4 (3 pts) — FDB supports snapshot reads. How do snapshot reads differ from standard reads with respect to conflict detection, and in what situation would you choose one over the other?
+
+Standard reads are included in the transaction’s read-set, which the Resolver will abort the transaction if the data changes before commit.Snapshot reads bypass this conflict detection, allowing the transaction to commit even if the keys read were modified by a concurrent process. I will use snapshot reads for updating background data or data that do not need ACID property, like IoT where some data contamination is acceptable. 
+
+Q5 (3 pts) — FDB claims that its recovery is "cheap" and does not require replaying a redo log in the critical path. Explain what makes this possible, referencing how StorageServers and LogServers interact during normal operation.
+
+The decoupling of SS and TMS allow the cheap recovery. SS stores persistent states of the server. It replays from nearest previous point for recovery. This happens in the background so it doesn’t need full replaying before accepting new queries. TMS checks the previous version before it failed and start from that point to create a new version. Then it takes in new queries. It only needs to recover the metadata. This enables low latency recovery. 
